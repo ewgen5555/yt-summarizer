@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YouTube AI Summarizer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>YouTube → резюме</h1>
+    <p class="muted">Вставьте ссылку на видео — получите структуру, краткое резюме и ключевые идеи.</p>
+
+    <form id="form">
+      <input id="url" type="url" required placeholder="https://www.youtube.com/watch?v=..." autofocus>
+      <button id="submit" type="submit">Обработать</button>
+    </form>
+
+    <section id="status" class="status hidden"></section>
+
+    <section id="result" class="hidden">
+      <h2 id="title"></h2>
+      <p class="muted" id="meta"></p>
+
+      <h3>Краткое резюме</h3>
+      <p id="summary"></p>
+
+      <h3>Ключевые идеи</h3>
+      <ul id="ideas"></ul>
+
+      <h3>Структура</h3>
+      <p><strong id="topic"></strong></p>
+      <ol id="sections"></ol>
+
+      <details>
+        <summary>Транскрипт</summary>
+        <pre id="transcript"></pre>
+      </details>
+    </section>
+  </main>
+  <footer class="muted"><a href="/docs">API</a> · <a href="/health">health</a></footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+"""Основной обработчик: ссылка -> транскрипт -> анализ. Каждый шаг доступен отдельно через API."""
+import logging
+
+from app.config import settings
+from app.models import Job, JobStatus, TranscriptResult
+from app.services import analysis, storage, transcribe, youtube
+
+log = logging.getLogger(__name__)
+
+
+def get_transcript(url: str) -> TranscriptResult:
+    """Шаг 1-2: метаданные + текст. Сначала субтитры YouTube (бесплатно), иначе аудио + Whisper."""
+    video = youtube.get_video_info(url)
+
+    if settings.prefer_youtube_subtitles:
+        subs = youtube.download_subtitles(url, video.video_id)
+        if subs:
+            text, lang = subs
+            return TranscriptResult(video=video, source="youtube_subtitles", language=lang, text=text)
+
+    audio = youtube.download_audio(url, video.video_id)
+    try:
+        text, lang = transcribe.transcribe(audio)
+    finally:
+        audio.unlink(missing_ok=True)  # не храним медиа на диске
+    if len(text.strip()) < 20:
+        raise RuntimeError("Транскрипт пустой — в видео нет речи или она не распознана")
+    return TranscriptResult(video=video, source=settings.transcriber, language=lang, text=text)
+
+
+def run_job(job_id: str) -> None:
+    """Фоновая задача: выполняет весь пайплайн, сохраняя прогресс в хранилище."""
+    job = storage.get_job(job_id)
+    if job is None:
+        log.error("job %s не найдена", job_id)
+        return
+    try:
+        storage.update_status(job, JobStatus.downloading, "Получаем данные видео")
+        job.transcript = get_transcript(job.url)
+        job.video = job.transcript.video
+        storage.update_status(job, JobStatus.analyzing,
+                              f"Транскрипт готов ({len(job.transcript.text)} симв.), анализируем")
+
+        job.analysis = analysis.analyze(job.transcript.text)
+        storage.update_status(job, JobStatus.done, "Готово")
+    except Exception as e:  # noqa: BLE001 — любая ошибка должна попасть в статус задачи
+        log.exception("job %s завершилась ошибкой", job_id)
+        job.error = f"{type(e).__name__}: {e}"
+        storage.update_status(job, JobStatus.error, "Ошибка")
+
+
+def process_sync(job: Job) -> Job:
+    """Синхронный вариант (для CLI/тестов)."""
+    run_job(job.id)
+    return storage.get_job(job.id) or job
