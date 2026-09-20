@@ -89,6 +89,55 @@ docker compose logs -f
 
 Модель whisper и задачи сохраняются в `./data`, так что при перезапуске ничего не скачивается заново.
 
+## Деплой на VPS (одна команда)
+
+### Где взять сервер
+
+Нужен VPS с **1 vCPU / 2 ГБ RAM / 20 ГБ диска**, Ubuntu 22.04 или 24.04. С `TRANSCRIBER=openai` хватит и 1 ГБ. Примеры (цены — ориентир):
+
+| Хостинг | Тариф | Цена/мес | Заметки |
+|---|---|---|---|
+| [Hetzner Cloud](https://www.hetzner.com/cloud) | CX22 (2 vCPU / 4 ГБ) | ~€4 | лучшее соотношение цена/мощность, Германия/Финляндия |
+| [Timeweb Cloud](https://timeweb.cloud) | 1 vCPU / 2 ГБ | ~300 ₽ | оплата картами РФ |
+| [Selectel / VDSina / Aeza](https://aeza.net) | 1 vCPU / 2 ГБ | 300–500 ₽ | оплата картами РФ |
+| [DigitalOcean](https://www.digitalocean.com) | Basic 1 ГБ | $6 | есть стартовый кредит |
+| [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) | ARM 4 vCPU / 24 ГБ | $0 | бесплатно навсегда, но регистрация капризная |
+
+Важно: с IP дата-центров YouTube часто отвечает «Sign in to confirm you're not a bot» — см. раздел ниже про `YT_COOKIES_FILE`/`YT_PROXY`. Хостинги с «домашними»/резидентными IP этой проблемы обычно не имеют.
+
+### Установка
+
+На свежем сервере (по SSH под root или через sudo):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ewgen5555/yt-summarizer/main/deploy/install.sh | sudo bash -s -- \
+  --key sk_ВАШ_КЛЮЧ --provider inception --model mercury-2.5
+```
+
+Скрипт поставит Docker, добавит 2 ГБ swap, склонирует репо в `/opt/yt-summarizer`, создаст `.env` и запустит контейнер с автозапуском. Через минуту сервис доступен на `http://IP_СЕРВЕРА:8000`.
+
+С доменом и HTTPS (заранее направьте A-запись домена на IP сервера):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ewgen5555/yt-summarizer/main/deploy/install.sh | sudo bash -s -- \
+  --key sk_ВАШ_КЛЮЧ --domain yt.example.com
+```
+
+Поднимется Caddy, сертификат Let's Encrypt выпустится автоматически → `https://yt.example.com`.
+
+Опции: `--transcriber openai` (не считать whisper на сервере), `--whisper base` (модель whisper, по умолчанию `tiny`).
+
+### Обслуживание
+
+```bash
+cd /opt/yt-summarizer
+docker compose logs -f            # логи
+nano .env && docker compose up -d # изменить настройки
+./deploy/update.sh                # обновить до последней версии
+```
+
+Файлы: `deploy/install.sh` — установщик, `deploy/update.sh` — обновление, `deploy/Caddyfile` + `deploy/docker-compose.caddy.yml` — HTTPS-прокси.
+
 ## Смена ИИ-модели (конфиг)
 
 Всё в `.env`, код менять не нужно:

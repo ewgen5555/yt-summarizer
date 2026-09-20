@@ -7,3 +7,4 @@ data/*
 !data/.gitkeep
 .pytest_cache/
 .ruff_cache/
+deploy/Caddyfile.local
