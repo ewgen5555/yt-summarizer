@@ -94,7 +94,7 @@ docker compose logs -f
 Всё в `.env`, код менять не нужно:
 
 ```env
-LLM_PROVIDER=openai      # openai | openrouter | groq | deepseek | ollama | custom
+LLM_PROVIDER=openai      # openai | openrouter | groq | deepseek | inception | ollama | custom
 LLM_API_KEY=...
 LLM_MODEL=gpt-4o-mini
 # LLM_BASE_URL=https://my-proxy.example/v1   # для custom

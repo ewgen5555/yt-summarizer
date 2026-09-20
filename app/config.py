@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.2
-    llm_max_tokens: int = 2048
+    llm_max_tokens: int = 8192
     llm_timeout: int = 120
     # сколько символов транскрипта отправлять в модель за один запрос
     llm_chunk_chars: int = 12000

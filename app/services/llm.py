@@ -16,6 +16,7 @@ PROVIDER_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
     "groq": "https://api.groq.com/openai/v1",
     "deepseek": "https://api.deepseek.com/v1",
+    "inception": "https://api.inceptionlabs.ai/v1",
     "ollama": "http://localhost:11434/v1",
 }
 
@@ -50,11 +51,18 @@ class LLMClient:
             ],
             **kwargs,
         )
-        content = resp.choices[0].message.content or ""
+        choice = resp.choices[0]
+        content = (choice.message.content or "").strip()
         usage = resp.usage
         if usage:
-            log.info("LLM tokens: prompt=%s completion=%s", usage.prompt_tokens, usage.completion_tokens)
-        return content.strip()
+            log.info("LLM tokens: prompt=%s completion=%s finish=%s", usage.prompt_tokens,
+                     usage.completion_tokens, choice.finish_reason)
+        if not content:
+            raise RuntimeError(f"Модель вернула пустой ответ (finish_reason={choice.finish_reason}); "
+                               "попробуйте увеличить LLM_MAX_TOKENS")
+        if choice.finish_reason == "length":
+            log.warning("Ответ обрезан по LLM_MAX_TOKENS=%s", settings.llm_max_tokens)
+        return content
 
     def complete_json(self, prompt: str) -> dict:
         """Просим JSON; если провайдер не поддерживает json_mode — парсим вручную."""
