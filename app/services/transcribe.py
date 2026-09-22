@@ -22,7 +22,7 @@ def _whisper_model():
 def _transcribe_faster_whisper(audio: Path) -> tuple[str, str | None]:
     model = _whisper_model()
     segments, info = model.transcribe(str(audio), language=settings.whisper_language,
-                                      vad_filter=True, beam_size=1)
+                                      vad_filter=settings.whisper_vad, beam_size=1)
     text = " ".join(s.text.strip() for s in segments)
     return text, info.language
 

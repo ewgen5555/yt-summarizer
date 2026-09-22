@@ -15,9 +15,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Install ffmpeg and a speech synthesizer
+        # espeak-ng нужен регрессионному тесту на пустой транскрипт (tests/test_transcribe_vad.py)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
-      - run: pytest -q
+      - run: pytest -q -rs
 
   docker:
     runs-on: ubuntu-latest
