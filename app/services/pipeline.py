@@ -12,17 +12,20 @@ def get_transcript(url: str) -> TranscriptResult:
     """Шаг 1-2: метаданные + текст. Сначала субтитры YouTube (бесплатно), иначе аудио + Whisper."""
     video = youtube.get_video_info(url)
 
-    if settings.prefer_youtube_subtitles:
-        subs = youtube.download_subtitles(url, video.video_id)
-        if subs:
-            text, lang = subs
-            return TranscriptResult(video=video, source="youtube_subtitles", language=lang, text=text)
+    # Один и тот же ролик может обрабатываться несколькими задачами сразу, а медиа-файл у них общий.
+    # Скачивание, транскрибация и удаление для одного video_id выполняются по очереди.
+    with youtube.video_lock(video.video_id):
+        if settings.prefer_youtube_subtitles:
+            subs = youtube.download_subtitles(url, video.video_id)
+            if subs:
+                text, lang = subs
+                return TranscriptResult(video=video, source="youtube_subtitles", language=lang, text=text)
 
-    audio = youtube.download_audio(url, video.video_id)
-    try:
-        text, lang = transcribe.transcribe(audio)
-    finally:
-        audio.unlink(missing_ok=True)  # не храним медиа на диске
+        audio = youtube.download_audio(url, video.video_id)
+        try:
+            text, lang = transcribe.transcribe(audio)
+        finally:
+            audio.unlink(missing_ok=True)  # не храним медиа на диске
     if len(text.strip()) < 20:
         raise RuntimeError(
             "Не удалось распознать речь в этом видео: движок транскрибации вернул пустой текст. "

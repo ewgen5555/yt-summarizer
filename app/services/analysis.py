@@ -51,26 +51,38 @@ def condense(text: str) -> str:
     return "\n\n".join(summaries)
 
 
-def structure(text: str) -> StructureResult:
-    data = get_llm().complete_json(PROMPT_STRUCTURE.format(text=condense(text)))
+def _structure(text: str) -> StructureResult:
+    data = get_llm().complete_json(PROMPT_STRUCTURE.format(text=text))
     sections = [Section(**s) for s in data.get("sections", [])]
     return StructureResult(topic=data.get("topic", ""), sections=sections)
 
 
+def _summary(text: str) -> SummaryResult:
+    return SummaryResult(summary=get_llm().complete(PROMPT_SUMMARY.format(text=text)))
+
+
+def _key_ideas(text: str) -> KeyIdeasResult:
+    data = get_llm().complete_json(PROMPT_IDEAS.format(text=text))
+    return KeyIdeasResult(ideas=[str(i) for i in data.get("ideas", [])])
+
+
+def structure(text: str) -> StructureResult:
+    return _structure(condense(text))
+
+
 def summary(text: str) -> SummaryResult:
-    return SummaryResult(summary=get_llm().complete(PROMPT_SUMMARY.format(text=condense(text))))
+    return _summary(condense(text))
 
 
 def key_ideas(text: str) -> KeyIdeasResult:
-    data = get_llm().complete_json(PROMPT_IDEAS.format(text=condense(text)))
-    return KeyIdeasResult(ideas=[str(i) for i in data.get("ideas", [])])
+    return _key_ideas(condense(text))
 
 
 def analyze(text: str) -> AnalysisResult:
     """Полный анализ: сжимаем один раз, затем три запроса к модели."""
     condensed = condense(text)
     return AnalysisResult(
-        structure=structure(condensed),
-        summary=summary(condensed).summary,
-        key_ideas=key_ideas(condensed).ideas,
+        structure=_structure(condensed),
+        summary=_summary(condensed).summary,
+        key_ideas=_key_ideas(condensed).ideas,
     )
