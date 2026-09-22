@@ -3,7 +3,7 @@ import logging
 
 from app.config import settings
 from app.models import Job, JobStatus, TranscriptResult
-from app.services import analysis, storage, transcribe, youtube
+from app.services import analysis, security, storage, transcribe, youtube
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +50,15 @@ def run_job(job_id: str) -> None:
         log.exception("job %s завершилась ошибкой", job_id)
         job.error = f"{type(e).__name__}: {e}"
         storage.update_status(job, JobStatus.error, "Ошибка")
+
+
+def run_job_in_background(job_id: str, client_id: str) -> None:
+    """Обёртка для BackgroundTasks: слот снимаем всегда, в том числе при падении пайплайна,
+    иначе клиент навсегда останется с исчерпанным лимитом одновременных задач."""
+    try:
+        run_job(job_id)
+    finally:
+        security.concurrency_limiter.release(client_id)
 
 
 def process_sync(job: Job) -> Job:

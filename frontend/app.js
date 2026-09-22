@@ -1,6 +1,11 @@
 const $ = (id) => document.getElementById(id);
 const form = $("form"), statusEl = $("status"), resultEl = $("result"), btn = $("submit");
 
+// Токен нужен только если сервер запущен с API_TOKEN. Хранится в браузере и уходит
+// в заголовке Authorization; без токена API работает открыто (публичное демо).
+const token = localStorage.getItem("api_token") || "";
+const headers = () => (token ? { Authorization: `Bearer ${token}` } : {});
+
 const STATUS_TEXT = {
   queued: "В очереди…",
   downloading: "Получаем данные видео…",
@@ -18,10 +23,10 @@ form.addEventListener("submit", async (e) => {
   try {
     const res = await fetch("/api/process", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers() },
       body: JSON.stringify({ url: $("url").value.trim() }),
     });
-    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    if (!res.ok) throw new Error(await errorText(res));
     const job = await res.json();
     await poll(job.id);
   } catch (err) {
@@ -33,12 +38,25 @@ form.addEventListener("submit", async (e) => {
 
 async function poll(id) {
   for (;;) {
-    const job = await (await fetch(`/api/jobs/${id}`)).json();
+    const res = await fetch(`/api/jobs/${id}`, { headers: headers() });
+    if (!res.ok) return setStatus("Ошибка: " + (await errorText(res)), true);
+    const job = await res.json();
     setStatus(`${STATUS_TEXT[job.status] || job.status} ${job.progress || ""}`, job.status === "error");
     if (job.status === "done") return render(job);
     if (job.status === "error") return setStatus("Ошибка: " + job.error, true);
     await new Promise((r) => setTimeout(r, 2500));
   }
+}
+
+// Ошибки FastAPI приходят как {"detail": "..."}, но при 429/500 это может быть HTML.
+async function errorText(res) {
+  try {
+    const body = await res.json();
+    if (body && body.detail) return body.detail;
+  } catch {
+    /* не JSON — покажем статус */
+  }
+  return `${res.status} ${res.statusText}`;
 }
 
 function setStatus(text, isError = false) {
