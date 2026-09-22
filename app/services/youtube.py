@@ -1,7 +1,10 @@
 """Работа с YouTube через yt-dlp: метаданные, субтитры, аудио."""
 import logging
 import re
+import threading
+from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yt_dlp
 
@@ -11,13 +14,39 @@ from app.models import VideoInfo
 log = logging.getLogger(__name__)
 
 _YT_ID_RE = re.compile(r"(?:v=|/shorts/|/live/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
+_ALLOWED_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com",
+    "youtu.be",
+}
 
 
 def extract_video_id(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    if host not in _ALLOWED_HOSTS:
+        raise ValueError("Ссылка должна вести на YouTube (youtube.com или youtu.be)")
     m = _YT_ID_RE.search(url)
     if not m:
         raise ValueError("Не удалось распознать ссылку на YouTube-видео")
     return m.group(1)
+
+
+# Один и тот же ролик может обрабатываться несколькими задачами сразу: медиа-файл у них общий,
+# поэтому скачивание/транскрибацию/удаление для одного video_id выполняем по очереди.
+_video_locks: dict[str, threading.Lock] = {}
+_video_locks_guard = threading.Lock()
+
+
+@contextmanager
+def video_lock(video_id: str):
+    with _video_locks_guard:
+        lock = _video_locks.setdefault(video_id, threading.Lock())
+    with lock:
+        yield
 
 
 def _base_opts() -> dict:

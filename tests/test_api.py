@@ -1,9 +1,12 @@
+import threading
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main
 from app.models import AnalysisResult, Section, StructureResult, TranscriptResult, VideoInfo
-from app.services import analysis, pipeline, youtube
+from app.services import analysis, pipeline, transcribe, youtube
 
 
 @pytest.fixture()
@@ -113,6 +116,77 @@ def test_analyze_matches_individual_steps(monkeypatch):
     assert result.summary == "тезис"
     assert result.key_ideas == ["идея"]
     assert result.structure.topic == "тема"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example.com/videos/youtu.be/aaaaaaaaaaa",
+        "http://169.254.169.254/latest/meta-data/",
+        "https://vimeo.com/12345",
+        "https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ",
+    ],
+)
+def test_extract_video_id_rejects_foreign_hosts(url):
+    with pytest.raises(ValueError):
+        youtube.extract_video_id(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+    ],
+)
+def test_extract_video_id_accepts_youtube_subdomains(url):
+    assert youtube.extract_video_id(url) == "dQw4w9WgXcQ"
+
+
+def test_process_rejects_foreign_url(client):
+    r = client.post("/api/process", json={"url": "http://169.254.169.254/latest/meta-data/"})
+    assert r.status_code == 400
+
+
+def test_jobs_limit_is_bounded(client):
+    assert client.get("/api/jobs?limit=999999").status_code == 422
+
+
+def test_same_video_is_processed_one_at_a_time(tmp_path, monkeypatch):
+    """Две задачи на один video_id не должны работать с общим медиа-файлом одновременно."""
+    active = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def fake_audio(url, video_id):
+        audio = tmp_path / f"{video_id}.mp3"
+        audio.write_bytes(b"fake")
+        return audio
+
+    def fake_transcribe(audio):
+        nonlocal active, peak
+        with guard:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.1)  # имитируем длинную транскрибацию
+        with guard:
+            active -= 1
+        return "текст речи " * 5, "ru"
+
+    monkeypatch.setattr(youtube, "get_video_info", lambda url: VideoInfo(
+        video_id="v" * 11, title="t", url=url))
+    monkeypatch.setattr(youtube, "download_subtitles", lambda url, vid: None)
+    monkeypatch.setattr(youtube, "download_audio", fake_audio)
+    monkeypatch.setattr(transcribe, "transcribe", fake_transcribe)
+
+    url = "https://youtu.be/" + "v" * 11
+    threads = [threading.Thread(target=pipeline.get_transcript, args=(url,)) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert peak == 1, "задачи на одно видео обрабатывались параллельно"
 
 
 def test_job_not_found(client):

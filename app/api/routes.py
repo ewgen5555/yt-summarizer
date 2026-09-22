@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from app.models import (
     Job,
@@ -11,7 +11,7 @@ from app.models import (
     TranscriptResult,
     UrlRequest,
 )
-from app.services import analysis, pipeline, storage
+from app.services import analysis, pipeline, storage, youtube
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["processing"])
@@ -21,6 +21,10 @@ router = APIRouter(prefix="/api", tags=["processing"])
 
 @router.post("/process", response_model=Job, status_code=202, summary="Запустить полную обработку видео")
 def process(req: UrlRequest, background: BackgroundTasks) -> Job:
+    try:
+        youtube.extract_video_id(str(req.url))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     job = storage.create_job(str(req.url))
     background.add_task(pipeline.run_job, job.id)
     return job
@@ -35,7 +39,7 @@ def get_job(job_id: str) -> Job:
 
 
 @router.get("/jobs", response_model=list[Job], summary="Последние задачи")
-def list_jobs(limit: int = 20) -> list[Job]:
+def list_jobs(limit: int = Query(20, ge=1, le=100)) -> list[Job]:
     return storage.list_jobs(limit)
 
 
