@@ -33,8 +33,12 @@ apt-get install -y -qq git >/dev/null
 
 echo ">> Swap 2G (защита от OOM на маленьких VPS)"
 if ! swapon --show | grep -q swapfile; then
-  if fallocate -l 2G /swapfile 2>/dev/null && chmod 600 /swapfile && mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile 2>/dev/null; then
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  # fallocate не работает на части ФС (LXC/OpenVZ) — тогда пишем файл целиком через dd
+  if ! fallocate -l 2G /swapfile 2>/dev/null; then
+    dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null || true
+  fi
+  if chmod 600 /swapfile 2>/dev/null && mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile 2>/dev/null; then
+    { grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab; } 2>/dev/null || true
     echo ">> Swap создан"
   else
     echo ">> Предупреждение: не удалось создать swap (LXC/OpenVZ контейнер?). Продолжаем без swap."
