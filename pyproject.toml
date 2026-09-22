@@ -7,3 +7,5 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# plain `pytest` must see the app package, not just `python -m pytest`
+pythonpath = ["."]
