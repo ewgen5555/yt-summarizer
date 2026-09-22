@@ -6,13 +6,14 @@ from datetime import datetime
 
 from app.config import settings
 from app.models import Job, JobStatus
+from app.services import security
 
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
 
 
-def create_job(url: str) -> Job:
-    job = Job(id=uuid.uuid4().hex[:12], url=url)
+def create_job(url: str, owner: str = security.ANONYMOUS_OWNER) -> Job:
+    job = Job(id=uuid.uuid4().hex[:12], url=url, owner=owner)
     save_job(job)
     return job
 
@@ -31,9 +32,12 @@ def get_job(job_id: str) -> Job | None:
     return Job.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def list_jobs(limit: int = 50) -> list[Job]:
+def list_jobs(limit: int = 50, owner: str | None = None) -> list[Job]:
     files = sorted(settings.jobs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return [Job.model_validate_json(p.read_text(encoding="utf-8")) for p in files[:limit]]
+    jobs = [Job.model_validate_json(p.read_text(encoding="utf-8")) for p in files]
+    if owner is not None:
+        jobs = [job for job in jobs if security.owns(job.owner, owner)]
+    return jobs[:limit]
 
 
 def count_jobs() -> int:

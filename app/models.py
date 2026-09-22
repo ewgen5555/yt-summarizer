@@ -68,6 +68,8 @@ class AnalysisResult(BaseModel):
 class Job(BaseModel):
     id: str
     url: str
+    # Кто создал задачу. Хранится на диске, но наружу не отдаётся — см. JobPublic.
+    owner: str = ""
     status: JobStatus = JobStatus.queued
     progress: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -78,6 +80,16 @@ class Job(BaseModel):
     error: str | None = None
 
 
+class JobPublic(Job):
+    """Задача в ответе API: владелец скрыт.
+
+    Отдельная модель, а не response_model_exclude: у списков FastAPI это исключение
+    не применяется к элементам, и owner утёк бы из GET /api/jobs.
+    """
+
+    owner: str = Field(default="", exclude=True)
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
@@ -86,3 +98,4 @@ class HealthResponse(BaseModel):
     transcriber: str
     jobs_total: int
     uptime_sec: int
+    auth_required: bool = False

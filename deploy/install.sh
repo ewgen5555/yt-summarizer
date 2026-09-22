@@ -5,11 +5,13 @@
 #
 # Что делает: ставит Docker, клонирует репо в /opt/yt-summarizer, создаёт .env,
 # запускает контейнер (restart=always). С --domain дополнительно поднимает Caddy с HTTPS.
+# По умолчанию включает API_TOKEN (API закрыт токеном); открытый доступ — с --no-auth.
 set -euo pipefail
 
 REPO="https://github.com/ewgen5555/yt-summarizer.git"
 DIR="/opt/yt-summarizer"
 PROVIDER="inception"; MODEL="mercury-2.5"; KEY=""; DOMAIN=""; TRANSCRIBER="faster_whisper"; WHISPER="tiny"
+NO_AUTH=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,11 +21,23 @@ while [[ $# -gt 0 ]]; do
     --domain) DOMAIN="$2"; shift 2;;
     --transcriber) TRANSCRIBER="$2"; shift 2;;
     --whisper) WHISPER="$2"; shift 2;;
+    --no-auth) NO_AUTH=1; shift;;
     *) echo "Неизвестный аргумент: $1"; exit 1;;
   esac
 done
 [[ -n "$KEY" ]] || { echo "Нужен --key <LLM_API_KEY>"; exit 1; }
 [[ $EUID -eq 0 ]] || { echo "Запускайте через sudo"; exit 1; }
+
+# set_env KEY VALUE — заменяет строку в .env или дописывает её, если ключа ещё нет
+# (нужно для обновления уже установленных инстансов, где .env не пересоздаётся).
+set_env() {
+  local key="$1" value="$2" file="$DIR/.env"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
 
 echo ">> Docker"
 if ! command -v docker >/dev/null; then
@@ -54,8 +68,24 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
   sed -i "s|^LLM_PROVIDER=.*|LLM_PROVIDER=$PROVIDER|; s|^LLM_MODEL=.*|LLM_MODEL=$MODEL|; s|^LLM_API_KEY=.*|LLM_API_KEY=$KEY|" .env
   sed -i "s|^TRANSCRIBER=.*|TRANSCRIBER=$TRANSCRIBER|; s|^WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER|" .env
-  chmod 600 .env
 fi
+
+# Публичный запуск закрываем токеном: иначе любой желающий жжёт платные транскрибацию и LLM
+# и читает чужие транскрипты. Полностью открытый доступ — только явным --no-auth.
+if [[ $NO_AUTH -eq 0 ]]; then
+  if [[ -z "$(grep '^API_TOKEN=' .env | cut -d= -f2-)" ]]; then
+    set_env API_TOKEN "$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  fi
+  echo ">> API_TOKEN включён (отключить: --no-auth)"
+else
+  echo ">> Внимание: API открыт без токена (--no-auth)."
+fi
+
+if [[ -n "$DOMAIN" ]]; then
+  # За Caddy реальный IP клиента приходит в X-Forwarded-For — нужен для лимитов по клиенту.
+  set_env TRUST_PROXY true
+fi
+chmod 600 .env
 
 echo ">> Запуск приложения"
 docker compose up -d --build
@@ -73,5 +103,10 @@ fi
 
 echo
 echo "Готово: $URL   (health: $URL/health)"
+if [[ $NO_AUTH -eq 0 ]]; then
+  echo "Токен:  $(grep '^API_TOKEN=' "$DIR/.env" | cut -d= -f2-)"
+  echo "        Вставьте его в консоли браузера, чтобы фронтенд ходил в API:"
+  echo "        localStorage.setItem('api_token', '<токен>')"
+fi
 echo "Логи:      cd $DIR && docker compose logs -f"
 echo "Обновить:  cd $DIR && git pull && docker compose up -d --build"

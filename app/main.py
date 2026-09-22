@@ -49,6 +49,7 @@ def health() -> HealthResponse:
         transcriber=settings.transcriber,
         jobs_total=storage.count_jobs(),
         uptime_sec=int(time.time() - _started),
+        auth_required=bool(settings.api_token),
     )
 
 

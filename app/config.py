@@ -49,6 +49,24 @@ class Settings(BaseSettings):
     # прокси для yt-dlp, напр. socks5://user:pass@host:1080
     yt_proxy: str | None = None
 
+    # --- доступ ---
+    # Пусто = API открыт всем (локальная разработка, демо). Для публичного запуска задайте токен:
+    # тогда все /api/* требуют заголовок Authorization: Bearer <токен>.
+    api_token: str = ""
+    # Доверять X-Forwarded-For (только если приложение скрыто за своим прокси — Caddy/nginx).
+    # Напрямую в интернет не включайте: заголовок подделывается и обойдёт лимиты.
+    trust_proxy: bool = False
+
+    # --- лимиты на публичные эндпоинты ---
+    # Запуск пайплайна стоит денег (транскрибация + несколько вызовов LLM), поэтому лимиты
+    # отдельные для дорогих POST и для дешёвых GET (фронтенд опрашивает статус каждые 2.5 с).
+    rate_limit_enabled: bool = True
+    rate_limit_process_per_minute: int = 10
+    rate_limit_process_per_day: int = 50
+    rate_limit_read_per_minute: int = 120
+    # Сколько задач от одного пользователя может обрабатываться одновременно
+    max_concurrent_jobs_per_client: int = 2
+
     @property
     def jobs_dir(self) -> Path:
         p = self.data_dir / "jobs"
