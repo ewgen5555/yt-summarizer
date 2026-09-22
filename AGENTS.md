@@ -60,3 +60,11 @@ without it — copy `.env.example` first.
   `youtube.video_lock` or concurrent jobs race on the same file.
 - Only YouTube hosts are accepted (`youtube._ALLOWED_HOSTS`); the video-id regex alone would let any
   URL through to yt-dlp.
+- Merging one branch into another can silently revert a fix: the merge that brought `main` into the
+  auth branch kept both sides of two conflicts in `app/api/routes.py`, leaving two definitions of
+  `POST /api/process` and `GET /api/jobs`. Python keeps the last one, so the old unauthenticated
+  handlers shipped while CI stayed green on both branches. After any merge, run `ruff check .` and
+  `pytest` on the *merge commit* and look for duplicate definitions (`ruff check --select F811`).
+- Keep test-only monkeypatching out of `autouse` fixtures unless every test wants it. An autouse
+  fixture that stubs `analysis.analyze`/`pipeline.get_transcript` shadows the real functions in tests
+  that verify those functions directly, so those tests pass against the stub instead of the code.

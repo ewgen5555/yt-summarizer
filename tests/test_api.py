@@ -14,7 +14,7 @@ from app.models import (
     TranscriptResult,
     VideoInfo,
 )
-from app.services import analysis, pipeline, security, storage, youtube
+from app.services import analysis, pipeline, security, storage, transcribe, youtube
 
 URL = "https://youtu.be/dQw4w9WgXcQ"
 
@@ -25,26 +25,6 @@ def reset_limiters():
     security.reset_all()
     yield
     security.reset_all()
-
-
-@pytest.fixture(autouse=True)
-def offline_pipeline(monkeypatch):
-    """Тесты не должны ходить в сеть: /api/process запускает пайплайн в фоне."""
-    video = VideoInfo(video_id="dQw4w9WgXcQ", title="Тест", url=URL)
-    transcript = TranscriptResult(video=video, source="youtube_subtitles", language="ru",
-                                  text="текст " * 50)
-    monkeypatch.setattr(pipeline, "get_transcript", lambda url: transcript)
-    monkeypatch.setattr(analysis, "analyze", lambda text: AnalysisResult(
-        structure=StructureResult(topic="Тема", sections=[Section(title="Раздел", summary="О чём")]),
-        summary="Резюме",
-        key_ideas=["Идея"],
-    ))
-    monkeypatch.setattr(analysis, "structure", lambda text: StructureResult(
-        topic="Тема", sections=[Section(title="Раздел", summary="О чём")]))
-    monkeypatch.setattr(analysis, "summary", lambda text: SummaryResult(summary="Резюме"))
-    monkeypatch.setattr(analysis, "key_ideas", lambda text: KeyIdeasResult(ideas=["Идея"]))
-from app.models import AnalysisResult, Section, StructureResult, TranscriptResult, VideoInfo
-from app.services import analysis, pipeline, transcribe, youtube
 
 
 @pytest.fixture()
@@ -58,7 +38,28 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(security.settings, "rate_limit_process_per_day", 50)
     monkeypatch.setattr(security.settings, "rate_limit_read_per_minute", 120)
     monkeypatch.setattr(security.settings, "max_concurrent_jobs_per_client", 2)
-    return TestClient(main.app)
+    # Пайплайн уходит в фон, поэтому тесты API должны быть офлайн. Подмены живут здесь, а не в
+    # autouse-фикстуре: иначе они перекрывали бы настоящие analyze()/get_transcript() в тестах,
+    # которые проверяют саму логику этих функций и клиентом не пользуются.
+    _go_offline(monkeypatch)
+    with TestClient(main.app) as c:
+        yield c
+
+
+def _go_offline(monkeypatch) -> None:
+    video = VideoInfo(video_id="dQw4w9WgXcQ", title="Тест", url=URL)
+    transcript = TranscriptResult(video=video, source="youtube_subtitles", language="ru",
+                                  text="текст " * 50)
+    monkeypatch.setattr(pipeline, "get_transcript", lambda url: transcript)
+    monkeypatch.setattr(analysis, "analyze", lambda text: AnalysisResult(
+        structure=StructureResult(topic="Тема", sections=[Section(title="Раздел", summary="О чём")]),
+        summary="Резюме",
+        key_ideas=["Идея"],
+    ))
+    monkeypatch.setattr(analysis, "structure", lambda text: StructureResult(
+        topic="Тема", sections=[Section(title="Раздел", summary="О чём")]))
+    monkeypatch.setattr(analysis, "summary", lambda text: SummaryResult(summary="Резюме"))
+    monkeypatch.setattr(analysis, "key_ideas", lambda text: KeyIdeasResult(ideas=["Идея"]))
 
 
 def test_health(client):
