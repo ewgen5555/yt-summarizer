@@ -28,7 +28,7 @@ _ALLOWED_HOSTS = {
 def extract_video_id(url: str) -> str:
     host = (urlparse(url).hostname or "").lower()
     if host not in _ALLOWED_HOSTS:
-        raise ValueError("Ссылка должна вести на youtube.com или youtu.be")
+        raise ValueError("Ссылка должна вести на YouTube (youtube.com или youtu.be)")
     m = _YT_ID_RE.search(url)
     if not m:
         raise ValueError("Не удалось распознать ссылку на YouTube-видео")
