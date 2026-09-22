@@ -24,7 +24,10 @@ def get_transcript(url: str) -> TranscriptResult:
     finally:
         audio.unlink(missing_ok=True)  # не храним медиа на диске
     if len(text.strip()) < 20:
-        raise RuntimeError("Транскрипт пустой — в видео нет речи или она не распознана")
+        raise RuntimeError(
+            "Не удалось распознать речь в этом видео: движок транскрибации вернул пустой текст. "
+            "Проверьте, что в видео есть различимая речь, и при необходимости смените WHISPER_MODEL."
+        )
     return TranscriptResult(video=video, source=settings.transcriber, language=lang, text=text)
 
 

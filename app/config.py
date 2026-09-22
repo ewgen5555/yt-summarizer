@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_language: str | None = None   # None = автоопределение
+    # VAD отбрасывает речь, если поверх неё музыка или шум (типично для клипов и заставок),
+    # поэтому по умолчанию выключен. Включайте, если на входе много тишины и мало музыки.
+    whisper_vad: bool = False
     openai_transcribe_model: str = "whisper-1"
 
     # --- ограничения ---
