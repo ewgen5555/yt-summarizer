@@ -74,6 +74,47 @@ def test_full_pipeline_with_mocks(client, monkeypatch):
     assert job["analysis"]["key_ideas"] == ["Идея 1", "Идея 2"]
 
 
+class _FakeLLM:
+    """Считает запросы к модели и возвращает валидные ответы под каждый промпт."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def complete(self, prompt: str, **_kwargs) -> str:
+        self.prompts.append(prompt)
+        return "тезис"
+
+    def complete_json(self, prompt: str) -> dict:
+        self.prompts.append(prompt)
+        if "ideas" in prompt:
+            return {"ideas": ["идея"]}
+        return {"topic": "тема", "sections": [{"title": "раздел", "summary": "о чём"}]}
+
+
+def test_analyze_condenses_transcript_only_once(monkeypatch):
+    """analyze() не должен повторно сжимать уже сжатый текст: это лишние запросы к модели."""
+    fake = _FakeLLM()
+    monkeypatch.setattr(analysis, "get_llm", lambda: fake)
+    monkeypatch.setattr(analysis.settings, "llm_chunk_chars", 100)
+
+    text = "слово " * 400  # 2400 символов -> 24 фрагмента
+    analysis.analyze(text)
+
+    chunk_prompts = [p for p in fake.prompts if "фрагмент" in p]
+    assert len(chunk_prompts) == 24, "ожидалось одно сжатие, а не два"
+    assert len(fake.prompts) == 24 + 3, "после сжатия должно быть ровно три запроса"
+
+
+def test_analyze_matches_individual_steps(monkeypatch):
+    """Результат analyze() совпадает с отдельными вызовами structure/summary/key_ideas."""
+    fake = _FakeLLM()
+    monkeypatch.setattr(analysis, "get_llm", lambda: fake)
+    result = analysis.analyze("достаточно длинный текст для анализа " * 3)
+    assert result.summary == "тезис"
+    assert result.key_ideas == ["идея"]
+    assert result.structure.topic == "тема"
+
+
 def test_job_not_found(client):
     assert client.get("/api/jobs/nope").status_code == 404
 
