@@ -40,6 +40,45 @@ class TranscriptResult(BaseModel):
     text: str
 
 
+class Cue(BaseModel):
+    """Реплика с таймкодом (начало в секундах)."""
+
+    start: float
+    text: str
+
+
+class TimedTranscript(BaseModel):
+    """Транскрипт с таймкодами. Нужен /summarize, чтобы вернуть таймкоды пунктов.
+
+    Обычный TranscriptResult хранит только склеенный текст без времени, поэтому
+    субтитры и Whisper-сегменты сохраняем отдельно, пока они ещё с таймкодами.
+    """
+
+    video: VideoInfo
+    source: str
+    language: str | None = None
+    cues: list[Cue] = Field(default_factory=list)
+
+    @property
+    def text(self) -> str:
+        return " ".join(c.text for c in self.cues)
+
+
+class SummaryPoint(BaseModel):
+    text: str = Field(..., description="Формулировка пункта")
+    timestamp: str | None = Field(None, description="Таймкод вида mm:ss или hh:mm:ss, если определён")
+
+
+class SummarizeResult(BaseModel):
+    """Ответ /summarize: резюме и ключевые пункты по видео."""
+
+    video: VideoInfo
+    source: str = Field(..., description="youtube_subtitles | faster_whisper | openai")
+    language: str | None = None
+    summary: str
+    key_points: list[SummaryPoint] = Field(default_factory=list)
+
+
 class Section(BaseModel):
     title: str
     summary: str

@@ -9,11 +9,12 @@ from urllib.parse import urlparse
 import yt_dlp
 
 from app.config import settings
-from app.models import VideoInfo
+from app.models import Cue, VideoInfo
 
 log = logging.getLogger(__name__)
 
 _YT_ID_RE = re.compile(r"(?:v=|/shorts/|/live/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
+_VTT_TIME_RE = re.compile(r"^\s*((?:\d{1,2}:)?\d{1,2}:\d{2}(?:[.,]\d{1,3})?)\s*-->")
 _ALLOWED_HOSTS = {
     "youtube.com",
     "www.youtube.com",
@@ -83,22 +84,61 @@ def get_video_info(url: str) -> VideoInfo:
 
 def _clean_vtt(raw: str) -> str:
     """Превращаем WebVTT в чистый текст без таймкодов и дублей строк."""
-    lines: list[str] = []
+    return " ".join(c.text for c in _parse_vtt(raw))
+
+
+def _parse_vtt(raw: str) -> list[Cue]:
+    """Разбираем WebVTT в реплики с таймкодами начала.
+
+    Заодно убираем разметку, служебные строки и подряд идущие дубли: у автосубтитров
+    каждая фраза приходит и «накопительно», и отдельными кусками.
+    """
+    cues: list[Cue] = []
+    start = 0.0
     for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith(("WEBVTT", "Kind:", "Language:", "NOTE")):
             continue
-        if "-->" in line or line.isdigit():
+        if "-->" in line:
+            m = _VTT_TIME_RE.match(line)
+            if m:
+                start = _vtt_seconds(m.group(1))
             continue
-        line = re.sub(r"<[^>]+>", "", line)
-        if lines and lines[-1] == line:
+        if line.isdigit():
             continue
-        lines.append(line)
-    return " ".join(lines)
+        text = re.sub(r"<[^>]+>", "", line).strip()
+        if not text:
+            continue
+        if cues and cues[-1].text.endswith(text):
+            continue
+        cues.append(Cue(start=start, text=text))
+    return cues
+
+
+def _vtt_seconds(value: str) -> float:
+    """'01:02:03.500' -> 3723.5; WebVTT допускает и запятую как разделитель долей."""
+    parts = value.replace(",", ".").split(":")
+    try:
+        nums = [float(p) for p in parts]
+    except ValueError:
+        return 0.0
+    secs = 0.0
+    for n in nums:
+        secs = secs * 60 + n
+    return secs
 
 
 def download_subtitles(url: str, video_id: str) -> tuple[str, str] | None:
     """Пробуем скачать готовые (в т.ч. авто) субтитры. Возвращает (текст, язык) или None."""
+    timed = download_subtitle_cues(url, video_id)
+    if timed is None:
+        return None
+    cues, lang = timed
+    return " ".join(c.text for c in cues), lang
+
+
+def download_subtitle_cues(url: str, video_id: str) -> tuple[list[Cue], str] | None:
+    """Как download_subtitles, но сохраняет таймкоды (нужны /summarize)."""
     langs = [x.strip() for x in settings.subtitle_langs.split(",") if x.strip()]
     out_dir: Path = settings.media_dir
     opts = {
@@ -119,11 +159,11 @@ def download_subtitles(url: str, video_id: str) -> tuple[str, str] | None:
     for lang in langs:
         f = out_dir / f"{video_id}.{lang}.vtt"
         if f.exists():
-            text = _clean_vtt(f.read_text(encoding="utf-8", errors="ignore"))
+            cues = _parse_vtt(f.read_text(encoding="utf-8", errors="ignore"))
             f.unlink(missing_ok=True)
-            if len(text) > 50:
-                log.info("Субтитры найдены (%s), %d символов", lang, len(text))
-                return text, lang
+            if len(" ".join(c.text for c in cues)) > 50:
+                log.info("Субтитры найдены (%s), %d реплик", lang, len(cues))
+                return cues, lang
     return None
 
 

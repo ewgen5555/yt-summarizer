@@ -156,6 +156,7 @@ LLM_MODEL=gpt-4o-mini
 | Метод | Путь | Что делает |
 |---|---|---|
 | `GET` | `/health` | статус сервера, версия, провайдер, число задач, uptime |
+| `GET` | `/api/summarize` | `video_id` → транскрипт → резюме + ключевые пункты с таймкодами (одним запросом) |
 | `POST` | `/api/process` | `{url}` → запускает полный пайплайн в фоне, возвращает `Job` (202) |
 | `GET` | `/api/jobs/{id}` | статус/прогресс/результат задачи |
 | `GET` | `/api/jobs` | последние задачи |
@@ -170,6 +171,33 @@ curl -X POST localhost:8000/api/process -H 'Content-Type: application/json' \
 # {"id":"3f9c...","status":"queued",...}
 curl localhost:8000/api/jobs/3f9c...
 ```
+
+### Минимальный сценарий: YouTube → резюме
+
+`GET /api/summarize` делает всё сразу: принимает `video_id` (или полную ссылку), получает
+транскрипт и отдаёт резюме с ключевыми пунктами. Таймкод `timestamp` заполняется, когда его
+удалось определить (субтитры и Whisper дают таймкоды; Whisper API — нет, тогда `null`).
+
+```bash
+curl "localhost:8000/api/summarize?video_id=dQw4w9WgXcQ"
+```
+
+```json
+{
+  "video": {"video_id": "dQw4w9WgXcQ", "title": "...", "channel": "...", "duration_sec": 213, "url": "..."},
+  "source": "faster_whisper",
+  "language": "en",
+  "summary": "О чём видео…",
+  "key_points": [
+    {"text": "первый тезис", "timestamp": "00:27"},
+    {"text": "второй тезис", "timestamp": "01:05"}
+  ]
+}
+```
+
+Длинные транскрипты режутся на части по `LLM_CHUNK_CHARS`, поэтому в контекст дешёвой модели
+укладываются даже часовые видео. Эндпоинт защищён как «платный»: требует токен при заданном
+`API_TOKEN` и расходует лимиты на дорогие запросы.
 
 Статусы задачи: `queued → downloading → transcribing → analyzing → done | error`.
 
