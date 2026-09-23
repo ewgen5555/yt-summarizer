@@ -2,64 +2,18 @@ import threading
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app import main
 from app.models import (
     AnalysisResult,
-    KeyIdeasResult,
+    Cue,
     Section,
     StructureResult,
-    SummaryResult,
     TranscriptResult,
     VideoInfo,
 )
 from app.services import analysis, pipeline, security, storage, transcribe, youtube
 
 URL = "https://youtu.be/dQw4w9WgXcQ"
-
-
-@pytest.fixture(autouse=True)
-def reset_limiters():
-    """Лимитеры живут в памяти процесса — без сброса счётчики протекают между тестами."""
-    security.reset_all()
-    yield
-    security.reset_all()
-
-
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(main.settings, "data_dir", tmp_path)
-    monkeypatch.setattr(security.settings, "data_dir", tmp_path)
-    monkeypatch.setattr(security.settings, "api_token", "")
-    monkeypatch.setattr(security.settings, "trust_proxy", False)
-    monkeypatch.setattr(security.settings, "rate_limit_enabled", True)
-    monkeypatch.setattr(security.settings, "rate_limit_process_per_minute", 10)
-    monkeypatch.setattr(security.settings, "rate_limit_process_per_day", 50)
-    monkeypatch.setattr(security.settings, "rate_limit_read_per_minute", 120)
-    monkeypatch.setattr(security.settings, "max_concurrent_jobs_per_client", 2)
-    # Пайплайн уходит в фон, поэтому тесты API должны быть офлайн. Подмены живут здесь, а не в
-    # autouse-фикстуре: иначе они перекрывали бы настоящие analyze()/get_transcript() в тестах,
-    # которые проверяют саму логику этих функций и клиентом не пользуются.
-    _go_offline(monkeypatch)
-    with TestClient(main.app) as c:
-        yield c
-
-
-def _go_offline(monkeypatch) -> None:
-    video = VideoInfo(video_id="dQw4w9WgXcQ", title="Тест", url=URL)
-    transcript = TranscriptResult(video=video, source="youtube_subtitles", language="ru",
-                                  text="текст " * 50)
-    monkeypatch.setattr(pipeline, "get_transcript", lambda url: transcript)
-    monkeypatch.setattr(analysis, "analyze", lambda text: AnalysisResult(
-        structure=StructureResult(topic="Тема", sections=[Section(title="Раздел", summary="О чём")]),
-        summary="Резюме",
-        key_ideas=["Идея"],
-    ))
-    monkeypatch.setattr(analysis, "structure", lambda text: StructureResult(
-        topic="Тема", sections=[Section(title="Раздел", summary="О чём")]))
-    monkeypatch.setattr(analysis, "summary", lambda text: SummaryResult(summary="Резюме"))
-    monkeypatch.setattr(analysis, "key_ideas", lambda text: KeyIdeasResult(ideas=["Идея"]))
 
 
 def test_health(client):
@@ -210,7 +164,7 @@ def test_same_video_is_processed_one_at_a_time(tmp_path, monkeypatch):
         audio.write_bytes(b"fake")
         return audio
 
-    def fake_transcribe(audio):
+    def fake_transcribe_with_cues(audio):
         nonlocal active, peak
         with guard:
             active += 1
@@ -218,13 +172,14 @@ def test_same_video_is_processed_one_at_a_time(tmp_path, monkeypatch):
         time.sleep(0.1)  # имитируем длинную транскрибацию
         with guard:
             active -= 1
-        return "текст речи " * 5, "ru"
+        text = "текст речи " * 5
+        return text, "ru", [Cue(start=0.0, text=text)]
 
     monkeypatch.setattr(youtube, "get_video_info", lambda url: VideoInfo(
         video_id="v" * 11, title="t", url=url))
-    monkeypatch.setattr(youtube, "download_subtitles", lambda url, vid: None)
+    monkeypatch.setattr(youtube, "download_subtitle_cues", lambda url, vid: None)
     monkeypatch.setattr(youtube, "download_audio", fake_audio)
-    monkeypatch.setattr(transcribe, "transcribe", fake_transcribe)
+    monkeypatch.setattr(transcribe, "transcribe_with_cues", fake_transcribe_with_cues)
 
     url = "https://youtu.be/" + "v" * 11
     threads = [threading.Thread(target=pipeline.get_transcript, args=(url,)) for _ in range(3)]

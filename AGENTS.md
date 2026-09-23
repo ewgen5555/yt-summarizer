@@ -68,3 +68,15 @@ without it — copy `.env.example` first.
 - Keep test-only monkeypatching out of `autouse` fixtures unless every test wants it. An autouse
   fixture that stubs `analysis.analyze`/`pipeline.get_transcript` shadows the real functions in tests
   that verify those functions directly, so those tests pass against the stub instead of the code.
+- `GET /api/summarize` is the one-shot path: video → transcript → summary + key points with
+  timecodes. Timecodes need the cue list, so `youtube.download_subtitle_cues` and
+  `transcribe.transcribe_with_cues` return timestamped segments; the plain `get_transcript`
+  wrappers build on them. The OpenAI transcription engine has no segment times, so its cues are a
+  single 0-second entry and `timestamp` comes back null. Long transcripts are chunked by
+  `analysis._cue_groups` (whole cues per chunk), which keeps timecodes valid.
+- `Ametist298/deepseek-free-api` is a LOCAL gateway, not a hosted endpoint: it needs Node plus a
+  one-time browser login to chat.deepseek.com and keeps the session in `auth.json`. Without that
+  login `/v1/chat/completions` answers `Auth required: code 40002` (while `/v1/models` still looks
+  healthy, which is misleading). Wire it with `LLM_PROVIDER=deepseek-free` (`PROVIDER_URLS` maps it
+  to `http://localhost:18632/v1`); any OpenAI-compatible server works the same way via
+  `LLM_PROVIDER=custom` + `LLM_BASE_URL`.

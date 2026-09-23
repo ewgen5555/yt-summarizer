@@ -49,6 +49,27 @@ def test_clean_vtt_characterization(raw, expected):
     assert youtube._clean_vtt(raw) == expected
 
 
+def test_parse_vtt_keeps_real_start_times():
+    """Раньше «часы» не попадали в группу regex, и все реплики получали 00:00."""
+    raw = ("WEBVTT\n\n"
+           "00:00:01.000 --> 00:00:04.000\nПервая\n\n"
+           "01:23:45.500 --> 01:23:47.000\nПоздняя\n\n"
+           "00:02:03,250 --> 00:02:04,000\nС запятой\n")
+    cues = youtube._parse_vtt(raw)
+    assert [(c.start, c.text) for c in cues] == [(1.0, "Первая"), (5025.5, "Поздняя"), (123.25, "С запятой")]
+
+
+def test_parse_vtt_drops_markup_and_accumulating_duplicates():
+    raw = ("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<c>Привет</c>\n\n"
+           "00:00:02.000 --> 00:00:03.000\nПривет мир\n")
+    cues = youtube._parse_vtt(raw)
+    assert [c.text for c in cues] == ["Привет", "Привет мир"]
+
+
+def test_vtt_seconds_tolerates_garbage():
+    assert youtube._vtt_seconds("не таймкод") == 0.0
+
+
 @pytest.fixture()
 def subtitle_env(tmp_path, monkeypatch):
     monkeypatch.setattr(youtube.settings, "data_dir", tmp_path)

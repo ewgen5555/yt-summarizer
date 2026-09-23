@@ -2,7 +2,7 @@
 import logging
 
 from app.config import settings
-from app.models import Job, JobStatus, TranscriptResult
+from app.models import Job, JobStatus, TimedTranscript, TranscriptResult
 from app.services import analysis, security, storage, transcribe, youtube
 
 log = logging.getLogger(__name__)
@@ -10,20 +10,27 @@ log = logging.getLogger(__name__)
 
 def get_transcript(url: str) -> TranscriptResult:
     """Шаг 1-2: метаданные + текст. Сначала субтитры YouTube (бесплатно), иначе аудио + Whisper."""
+    timed = get_transcript_timed(url)
+    return TranscriptResult(video=timed.video, source=timed.source, language=timed.language, text=timed.text)
+
+
+def get_transcript_timed(url: str) -> TimedTranscript:
+    """То же, что get_transcript, но сохраняет таймкоды реплик (нужны /summarize)."""
     video = youtube.get_video_info(url)
+    text, cues, lang, source = "", [], None, settings.transcriber
 
     # Один и тот же ролик может обрабатываться несколькими задачами сразу, а медиа-файл у них общий.
     # Скачивание, транскрибация и удаление для одного video_id выполняются по очереди.
     with youtube.video_lock(video.video_id):
         if settings.prefer_youtube_subtitles:
-            subs = youtube.download_subtitles(url, video.video_id)
+            subs = youtube.download_subtitle_cues(url, video.video_id)
             if subs:
-                text, lang = subs
-                return TranscriptResult(video=video, source="youtube_subtitles", language=lang, text=text)
+                cues, lang = subs
+                return TimedTranscript(video=video, source="youtube_subtitles", language=lang, cues=cues)
 
         audio = youtube.download_audio(url, video.video_id)
         try:
-            text, lang = transcribe.transcribe(audio)
+            text, lang, cues = transcribe.transcribe_with_cues(audio)
         finally:
             audio.unlink(missing_ok=True)  # не храним медиа на диске
     if len(text.strip()) < 20:
@@ -31,7 +38,7 @@ def get_transcript(url: str) -> TranscriptResult:
             "Не удалось распознать речь в этом видео: движок транскрибации вернул пустой текст. "
             "Проверьте, что в видео есть различимая речь, и при необходимости смените WHISPER_MODEL."
         )
-    return TranscriptResult(video=video, source=settings.transcriber, language=lang, text=text)
+    return TimedTranscript(video=video, source=source, language=lang, cues=cues)
 
 
 def run_job(job_id: str) -> None:

@@ -18,6 +18,9 @@ PROVIDER_URLS = {
     "deepseek": "https://api.deepseek.com/v1",
     "inception": "https://api.inceptionlabs.ai/v1",
     "ollama": "http://localhost:11434/v1",
+    # Локальный бесплатный шлюз (Ametist298/deepseek-free-api): запускается рядом и
+    # проксирует DeepSeek в формате OpenAI. Ключ не нужен, но нужна браузерная сессия DeepSeek.
+    "deepseek-free": "http://localhost:18632/v1",
 }
 
 SYSTEM_PROMPT = (

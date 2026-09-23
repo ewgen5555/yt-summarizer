@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.config import settings
+from app.models import Cue
 
 log = logging.getLogger(__name__)
 
@@ -20,11 +21,20 @@ def _whisper_model():
 
 
 def _transcribe_faster_whisper(audio: Path) -> tuple[str, str | None]:
+    text, lang, _ = _transcribe_faster_whisper_cues(audio)
+    return text, lang
+
+
+def _transcribe_faster_whisper_cues(audio: Path) -> tuple[str, str | None, list[Cue]]:
     model = _whisper_model()
     segments, info = model.transcribe(str(audio), language=settings.whisper_language,
                                       vad_filter=settings.whisper_vad, beam_size=1)
-    text = " ".join(s.text.strip() for s in segments)
-    return text, info.language
+    cues: list[Cue] = []
+    for s in segments:
+        t = s.text.strip()
+        if t:
+            cues.append(Cue(start=float(s.start), text=t))
+    return " ".join(c.text for c in cues), info.language, cues
 
 
 def _transcribe_openai(audio: Path) -> tuple[str, str | None]:
@@ -39,10 +49,21 @@ def _transcribe_openai(audio: Path) -> tuple[str, str | None]:
 
 def transcribe(audio: Path) -> tuple[str, str | None]:
     """Возвращает (текст, язык)."""
+    text, lang, _ = transcribe_with_cues(audio)
+    return text, lang
+
+
+def transcribe_with_cues(audio: Path) -> tuple[str, str | None, list[Cue]]:
+    """Как transcribe, но дополнительно отдаёт реплики с таймкодами (для /summarize).
+
+    Движки, которые не отдают сегменты (openai), возвращают одну реплику с началом 0 —
+    тогда таймкоды в ответе просто не заполнятся, а текст останется полным.
+    """
     engine = settings.transcriber
     log.info("Транскрибация %s движком %s", audio.name, engine)
     if engine == "faster_whisper":
-        return _transcribe_faster_whisper(audio)
+        return _transcribe_faster_whisper_cues(audio)
     if engine == "openai":
-        return _transcribe_openai(audio)
+        text, lang = _transcribe_openai(audio)
+        return text, lang, ([Cue(start=0.0, text=text)] if text.strip() else [])
     raise ValueError(f"Неизвестный TRANSCRIBER: {engine}")
