@@ -99,7 +99,6 @@ docker compose logs -f
 |---|---|---|---|
 | [Hetzner Cloud](https://www.hetzner.com/cloud) | CX22 (2 vCPU / 4 ГБ) | ~€4 | лучшее соотношение цена/мощность, Германия/Финляндия |
 | [Timeweb Cloud](https://timeweb.cloud) | 1 vCPU / 2 ГБ | ~300 ₽ | оплата картами РФ |
-| [Selectel / VDSina / Aeza](https://aeza.net) | 1 vCPU / 2 ГБ | 300–500 ₽ | оплата картами РФ |
 | [DigitalOcean](https://www.digitalocean.com) | Basic 1 ГБ | $6 | есть стартовый кредит |
 | [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) | ARM 4 vCPU / 24 ГБ | $0 | бесплатно навсегда, но регистрация капризная |
 
